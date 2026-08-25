@@ -288,6 +288,18 @@ try {
                 exit;
             }
 
+            $rawCompletedAt = $task['completedAt'] ?? null;
+            $completedAt = null;
+            if (!empty($rawCompletedAt)) {
+                $t = strtotime($rawCompletedAt);
+                if ($t !== false) {
+                    $completedAt = date('Y-m-d H:i:s', $t);
+                }
+            }
+
+            $rawDueDate = $task['dueDate'] ?? date('Y-m-d');
+            $dueDate = date('Y-m-d', strtotime($rawDueDate) ?: time());
+
             $checkStmt = $pdo->prepare("SELECT id FROM task_instances WHERE id = :id");
             $checkStmt->execute([':id' => $task['id']]);
             $exists = $checkStmt->fetchColumn();
@@ -316,14 +328,14 @@ try {
                     ':type' => $task['type'] ?? 'single',
                     ':category' => $task['category'] ?? 'hogar',
                     ':assigned_to' => $task['assignedTo'] ?? 'user-1',
-                    ':due_date' => $task['dueDate'] ?? date('Y-m-d'),
+                    ':due_date' => $dueDate,
                     ':status' => $task['status'] ?? 'pending',
                     ':weight' => (int)($task['weight'] ?? 1),
                     ':estimated_minutes' => (int)($task['estimatedMinutes'] ?? 15),
                     ':priority' => $task['priority'] ?? null,
                     ':notes' => $task['notes'] ?? '',
                     ':week_id' => $task['weekId'] ?? '2026-W35',
-                    ':completed_at' => $task['completedAt'] ?? null,
+                    ':completed_at' => $completedAt,
                     ':completed_by' => $task['completedBy'] ?? null
                 ]);
             } else {
@@ -338,14 +350,14 @@ try {
                     ':type' => $task['type'] ?? 'single',
                     ':category' => $task['category'] ?? 'hogar',
                     ':assigned_to' => $task['assignedTo'] ?? 'user-1',
-                    ':due_date' => $task['dueDate'] ?? date('Y-m-d'),
+                    ':due_date' => $dueDate,
                     ':status' => $task['status'] ?? 'pending',
                     ':weight' => (int)($task['weight'] ?? 1),
                     ':estimated_minutes' => (int)($task['estimatedMinutes'] ?? 15),
                     ':priority' => $task['priority'] ?? null,
                     ':notes' => $task['notes'] ?? '',
                     ':week_id' => $task['weekId'] ?? '2026-W35',
-                    ':completed_at' => $task['completedAt'] ?? null,
+                    ':completed_at' => $completedAt,
                     ':completed_by' => $task['completedBy'] ?? null
                 ]);
             }
@@ -427,6 +439,19 @@ try {
             $batch = is_array($input) ? $input : [];
             foreach ($batch as $t) {
                 if (empty($t['id'])) continue;
+
+                $rawCompletedAt = $t['completedAt'] ?? null;
+                $completedAt = null;
+                if (!empty($rawCompletedAt)) {
+                    $ts = strtotime($rawCompletedAt);
+                    if ($ts !== false) {
+                        $completedAt = date('Y-m-d H:i:s', $ts);
+                    }
+                }
+
+                $rawDueDate = $t['dueDate'] ?? date('Y-m-d');
+                $dueDate = date('Y-m-d', strtotime($rawDueDate) ?: time());
+
                 $c = $pdo->prepare("SELECT id FROM task_instances WHERE id = :id");
                 $c->execute([':id' => $t['id']]);
                 if (!$c->fetchColumn()) {
@@ -441,14 +466,14 @@ try {
                         ':type' => $t['type'] ?? 'single',
                         ':category' => $t['category'] ?? 'hogar',
                         ':assigned_to' => $t['assignedTo'] ?? 'user-1',
-                        ':due_date' => $t['dueDate'] ?? date('Y-m-d'),
+                        ':due_date' => $dueDate,
                         ':status' => $t['status'] ?? 'pending',
                         ':weight' => (int)($t['weight'] ?? 1),
                         ':estimated_minutes' => (int)($t['estimatedMinutes'] ?? 15),
                         ':priority' => $t['priority'] ?? null,
                         ':notes' => $t['notes'] ?? '',
                         ':week_id' => $t['weekId'] ?? '2026-W35',
-                        ':completed_at' => $t['completedAt'] ?? null,
+                        ':completed_at' => $completedAt,
                         ':completed_by' => $t['completedBy'] ?? null
                     ]);
                 }

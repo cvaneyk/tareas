@@ -371,13 +371,13 @@
 
     initStorage() {
       if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-        this.saveUsers(DEFAULT_USERS);
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_USERS));
       }
       if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
-        this.saveSettings(DEFAULT_SETTINGS);
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
       }
       if (!localStorage.getItem(STORAGE_KEYS.TEMPLATES)) {
-        this.saveTemplates(DEFAULT_TEMPLATES);
+        localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(DEFAULT_TEMPLATES));
       }
     },
 

@@ -17,57 +17,54 @@
       this.activeTaskId = null;
     }
 
-    init() {
+    async init() {
       // 0. Register Service Worker for offline PWA support if on http/https
       if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
         navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW registration note:', err));
       }
 
-      // 1. Initialize storage and load or seed demo data
+      // 1. Initialize storage defaults
       storage.initStorage();
+
+      // 2. Fetch cloud data FIRST if available
+      await storage.syncFromCloud();
+
+      // 3. If no instances exist anywhere, seed initial week tasks
       if (storage.getInstances().length === 0) {
         engine.seedDemoData();
+        storage.syncBatchToCloud(storage.getInstances());
       } else {
         engine.generateWeekTasks(this.referenceDate);
       }
 
-      // 2. Apply theme and custom user colors
+      // 4. Apply theme and custom user colors
       this.applyThemeAndColors();
 
-      // 3. Setup event listeners
+      // 5. Setup event listeners
       this.setupNavigation();
       this.setupGlobalEvents();
       this.setupModalEvents();
 
-      // 4. Render initial view
+      // 6. Render initial view
       this.switchView('inicio');
 
-      // 5. Initial Cloud Sync if API available
-      storage.syncFromCloud().then(res => {
-        if (res.success) {
-          this.refreshCurrentView();
-        }
-      });
-
-      // 6. Periodic background sync (cada 12s para sincronizar móviles automáticamente)
-      setInterval(() => {
+      // 7. Periodic background sync (cada 10s para sincronizar móviles automáticamente)
+      setInterval(async () => {
         if (!document.hidden) {
-          storage.syncFromCloud().then(res => {
-            if (res.success) {
-              this.refreshCurrentView();
-            }
-          });
+          const res = await storage.syncFromCloud();
+          if (res.success) {
+            this.refreshCurrentView();
+          }
         }
-      }, 12000);
+      }, 10000);
 
-      // 7. Auto sync al volver a la app en móvil
-      document.addEventListener('visibilitychange', () => {
+      // 8. Auto sync al volver a la app en móvil
+      document.addEventListener('visibilitychange', async () => {
         if (!document.hidden) {
-          storage.syncFromCloud().then(res => {
-            if (res.success) {
-              this.refreshCurrentView();
-            }
-          });
+          const res = await storage.syncFromCloud();
+          if (res.success) {
+            this.refreshCurrentView();
+          }
         }
       });
     }
@@ -418,6 +415,7 @@
     }
 
     refreshCurrentView() {
+      this.applyThemeAndColors();
       this.switchView(this.currentView);
     }
 
