@@ -1,7 +1,7 @@
 <?php
 /**
  * Backend API REST para Hogar — Tareas Compartidas
- * Compatible con: Coolify, Docker, Apache, Nginx, MySQL, PostgreSQL y SQLite
+ * Compatible con: Coolify, Docker, Apache, Nginx, MySQL (todas las versiones), MariaDB, PostgreSQL y SQLite
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // --------------------------------------------------------------------------
-// CARGADOR DE VARIABLES DE ENTORNO (.env o Coolify Environment Variables)
+// 1. CARGADOR DE VARIABLES DE ENTORNO (.env o Coolify Environment Variables)
 // --------------------------------------------------------------------------
 function loadEnv($path = __DIR__ . '/.env') {
     if (file_exists($path)) {
@@ -42,13 +42,13 @@ function getEnvVar($key, $default = null) {
 }
 
 // --------------------------------------------------------------------------
-// CONEXIÓN A BASE DE DATOS (MySQL / PostgreSQL / SQLite)
+// 2. CONEXIÓN A BASE DE DATOS
 // --------------------------------------------------------------------------
 $databaseUrl = getEnvVar('DATABASE_URL');
 $dbType = strtolower(getEnvVar('DB_TYPE', 'mysql'));
 $dbHost = getEnvVar('DB_HOST', 'localhost');
 $dbPort = getEnvVar('DB_PORT', $dbType === 'pgsql' ? '5432' : '3306');
-$dbName = getEnvVar('DB_NAME', getEnvVar('DB_DATABASE', 'hogar_db'));
+$dbName = getEnvVar('DB_NAME', getEnvVar('DB_DATABASE', 'default'));
 $dbUser = getEnvVar('DB_USER', getEnvVar('DB_USERNAME', 'root'));
 $dbPass = getEnvVar('DB_PASS', getEnvVar('DB_PASSWORD', ''));
 
@@ -71,7 +71,7 @@ try {
     } elseif ($dbType === 'pgsql') {
         $pdo = new PDO("pgsql:host={$dbHost};port={$dbPort};dbname={$dbName}", $dbUser, $dbPass);
     } else {
-        // MySQL / MariaDB por defecto
+        // MySQL / MariaDB
         $pdo = new PDO("mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4", $dbUser, $dbPass);
     }
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -87,12 +87,9 @@ try {
 }
 
 // --------------------------------------------------------------------------
-// AUTO-INICIALIZACIÓN DE TABLAS (SI NO EXISTEN)
+// 3. AUTO-INICIALIZACIÓN DE TABLAS (SIN RESTRICCIONES BLOQUEANTES)
 // --------------------------------------------------------------------------
-function ensureSchema($pdo, $dbType) {
-    $autoInc = $dbType === 'pgsql' ? 'SERIAL' : 'INTEGER AUTO_INCREMENT';
-    $textType = 'TEXT';
-    
+function ensureSchema($pdo) {
     // 1. Users
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS users (
@@ -124,11 +121,11 @@ function ensureSchema($pdo, $dbType) {
             type VARCHAR(50) NOT NULL DEFAULT 'recurrent',
             category VARCHAR(50) NOT NULL DEFAULT 'hogar',
             frequency VARCHAR(50) NOT NULL DEFAULT 'daily',
-            frequency_config {$textType},
+            frequency_config TEXT,
             default_assignee VARCHAR(50) NOT NULL DEFAULT 'user-1',
             weight INT NOT NULL DEFAULT 1,
             estimated_minutes INT NOT NULL DEFAULT 15,
-            notes {$textType},
+            notes TEXT,
             active BOOLEAN NOT NULL DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -143,14 +140,14 @@ function ensureSchema($pdo, $dbType) {
             type VARCHAR(50) NOT NULL DEFAULT 'single',
             category VARCHAR(50) NOT NULL DEFAULT 'hogar',
             assigned_to VARCHAR(50) NOT NULL,
-            due_date DATE NOT NULL,
+            due_date VARCHAR(20) NOT NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             weight INT NOT NULL DEFAULT 1,
             estimated_minutes INT NOT NULL DEFAULT 15,
             priority VARCHAR(20),
-            notes {$textType},
+            notes TEXT,
             week_id VARCHAR(20) NOT NULL,
-            completed_at TIMESTAMP NULL,
+            completed_at VARCHAR(40) NULL,
             completed_by VARCHAR(50) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -164,7 +161,7 @@ function ensureSchema($pdo, $dbType) {
             name VARCHAR(255) NOT NULL,
             assigned_to VARCHAR(50) NOT NULL,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            completed_at TIMESTAMP NULL,
+            completed_at VARCHAR(40) NULL,
             completed_by VARCHAR(50) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -177,12 +174,12 @@ function ensureSchema($pdo, $dbType) {
             user_id VARCHAR(50) NOT NULL,
             action VARCHAR(50) NOT NULL,
             task_name VARCHAR(255) NOT NULL,
-            details {$textType},
+            details TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     ");
 
-    // Sembrar datos iniciales si no hay usuarios
+    // Sembrar usuarios iniciales si no existen
     $userCount = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
     if ($userCount == 0) {
         $pdo->exec("
@@ -206,164 +203,286 @@ function ensureSchema($pdo, $dbType) {
         ");
     }
 }
-ensureSchema($pdo, $dbType);
+ensureSchema($pdo);
 
 // --------------------------------------------------------------------------
-// RUTAS DE LA API
+// 4. RUTAS DE LA API (CRUD COMPLETO Y SEGURO)
 // --------------------------------------------------------------------------
 $action = $_GET['action'] ?? 'get_all';
-$input = json_decode(file_get_contents('php://input'), true) ?? [];
+$rawInput = file_get_contents('php://input');
+$input = json_decode($rawInput, true) ?? [];
 
-switch ($action) {
-    // 1. Obtener todos los datos sincronizados
-    case 'get_all':
-        $users = $pdo->query("SELECT * FROM users")->fetchAll();
-        $settings = $pdo->query("SELECT * FROM house_settings WHERE id = 'default'")->fetch() ?: [];
-        $templates = $pdo->query("SELECT * FROM task_templates")->fetchAll();
-        $instances = $pdo->query("SELECT * FROM task_instances ORDER BY due_date ASC")->fetchAll();
-        $subtasks = $pdo->query("SELECT * FROM subtasks")->fetchAll();
-        $activity = $pdo->query("SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 100")->fetchAll();
+try {
+    switch ($action) {
+        // Diagnóstico de salud
+        case 'health':
+            $usersCount = $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+            $tasksCount = $pdo->query("SELECT COUNT(*) FROM task_instances")->fetchColumn();
+            $tmplCount = $pdo->query("SELECT COUNT(*) FROM task_templates")->fetchColumn();
+            echo json_encode([
+                'status' => 'connected',
+                'message' => '¡Conexión exitosa a la base de datos!',
+                'database_type' => $dbType,
+                'database_name' => $dbName,
+                'host' => $dbHost,
+                'server_time' => date('Y-m-d H:i:s'),
+                'records' => [
+                    'users' => (int)$usersCount,
+                    'templates' => (int)$tmplCount,
+                    'task_instances' => (int)$tasksCount
+                ]
+            ], JSON_PRETTY_PRINT);
+            break;
 
-        // Agrupar subtareas dentro de sus instancias de tarea correspondientes
-        $subtasksByParent = [];
-        foreach ($subtasks as $sub) {
-            $subtasksByParent[$sub['parent_task_id']][] = [
-                'id' => $sub['id'],
-                'name' => $sub['name'],
-                'assignedTo' => $sub['assigned_to'],
-                'status' => $sub['status'],
-                'completedAt' => $sub['completed_at'],
-                'completedBy' => $sub['completed_by']
-            ];
-        }
+        // Obtener todos los datos sincronizados
+        case 'get_all':
+            $users = $pdo->query("SELECT * FROM users")->fetchAll();
+            $settings = $pdo->query("SELECT * FROM house_settings WHERE id = 'default'")->fetch() ?: [];
+            $templates = $pdo->query("SELECT * FROM task_templates")->fetchAll();
+            $instances = $pdo->query("SELECT * FROM task_instances ORDER BY due_date ASC")->fetchAll();
+            $subtasks = $pdo->query("SELECT * FROM subtasks")->fetchAll();
+            $activity = $pdo->query("SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 100")->fetchAll();
 
-        $formattedInstances = [];
-        foreach ($instances as $inst) {
-            $inst['assignedTo'] = $inst['assigned_to'];
-            $inst['dueDate'] = $inst['due_date'];
-            $inst['estimatedMinutes'] = (int)$inst['estimated_minutes'];
-            $inst['weight'] = (int)$inst['weight'];
-            $inst['weekId'] = $inst['week_id'];
-            $inst['completedAt'] = $inst['completed_at'];
-            $inst['completedBy'] = $inst['completed_by'];
-            $inst['templateId'] = $inst['template_id'];
-            $inst['subtasks'] = $subtasksByParent[$inst['id']] ?? [];
-            $formattedInstances[] = $inst;
-        }
-
-        echo json_encode([
-            'status' => 'ok',
-            'users' => $users,
-            'settings' => $settings,
-            'templates' => $templates,
-            'instances' => $formattedInstances,
-            'activityLog' => $activity
-        ]);
-        break;
-
-    // 2. Guardar o actualizar una tarea
-    case 'save_task':
-        $task = $input;
-        if (empty($task['id'])) {
-            http_response_code(400);
-            echo json_encode(['error' => 'Falta id de la tarea']);
-            exit;
-        }
-
-        if ($dbType === 'mysql') {
-            $sql = "
-                INSERT INTO task_instances (id, template_id, name, type, category, assigned_to, due_date, status, weight, estimated_minutes, priority, notes, week_id, completed_at, completed_by)
-                VALUES (:id, :template_id, :name, :type, :category, :assigned_to, :due_date, :status, :weight, :estimated_minutes, :priority, :notes, :week_id, :completed_at, :completed_by)
-                ON DUPLICATE KEY UPDATE
-                    status = VALUES(status),
-                    assigned_to = VALUES(assigned_to),
-                    due_date = VALUES(due_date),
-                    notes = VALUES(notes),
-                    completed_at = VALUES(completed_at),
-                    completed_by = VALUES(completed_by)
-            ";
-        } else {
-            // PostgreSQL / SQLite
-            $sql = "
-                INSERT INTO task_instances (id, template_id, name, type, category, assigned_to, due_date, status, weight, estimated_minutes, priority, notes, week_id, completed_at, completed_by)
-                VALUES (:id, :template_id, :name, :type, :category, :assigned_to, :due_date, :status, :weight, :estimated_minutes, :priority, :notes, :week_id, :completed_at, :completed_by)
-                ON CONFLICT (id) DO UPDATE SET
-                    status = excluded.status,
-                    assigned_to = excluded.assigned_to,
-                    due_date = excluded.due_date,
-                    notes = excluded.notes,
-                    completed_at = excluded.completed_at,
-                    completed_by = excluded.completed_by
-            ";
-        }
-
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':id' => $task['id'],
-            ':template_id' => $task['templateId'] ?? null,
-            ':name' => $task['name'],
-            ':type' => $task['type'] ?? 'single',
-            ':category' => $task['category'] ?? 'hogar',
-            ':assigned_to' => $task['assignedTo'],
-            ':due_date' => $task['dueDate'],
-            ':status' => $task['status'] ?? 'pending',
-            ':weight' => $task['weight'] ?? 1,
-            ':estimated_minutes' => $task['estimatedMinutes'] ?? 15,
-            ':priority' => $task['priority'] ?? null,
-            ':notes' => $task['notes'] ?? '',
-            ':week_id' => $task['weekId'],
-            ':completed_at' => $task['completedAt'] ?? null,
-            ':completed_by' => $task['completedBy'] ?? null
-        ]);
-
-        echo json_encode(['success' => true]);
-        break;
-
-    // 3. Registrar actividad
-    case 'log_activity':
-        $log = $input;
-        $stmt = $pdo->prepare("
-            INSERT INTO activity_log (id, user_id, action, task_name, details, timestamp)
-            VALUES (:id, :user_id, :action, :task_name, :details, :timestamp)
-        ");
-        $stmt->execute([
-            ':id' => $log['id'] ?? uniqid('log_'),
-            ':user_id' => $log['userId'],
-            ':action' => $log['action'],
-            ':task_name' => $log['taskName'],
-            ':details' => $log['details'] ?? '',
-            ':timestamp' => $log['timestamp'] ?? date('Y-m-d H:i:s')
-        ]);
-        echo json_encode(['success' => true]);
-        break;
-
-    // 4. Guardar usuarios
-    case 'save_users':
-        foreach ($input as $u) {
-            if ($dbType === 'mysql') {
-                $sql = "
-                    INSERT INTO users (id, name, color, avatar) VALUES (:id, :name, :color, :avatar)
-                    ON DUPLICATE KEY UPDATE name = VALUES(name), color = VALUES(color), avatar = VALUES(avatar)
-                ";
-            } else {
-                $sql = "
-                    INSERT INTO users (id, name, color, avatar) VALUES (:id, :name, :color, :avatar)
-                    ON CONFLICT (id) DO UPDATE SET name = excluded.name, color = excluded.color, avatar = excluded.avatar
-                ";
+            $subtasksByParent = [];
+            foreach ($subtasks as $sub) {
+                $subtasksByParent[$sub['parent_task_id']][] = [
+                    'id' => $sub['id'],
+                    'name' => $sub['name'],
+                    'assignedTo' => $sub['assigned_to'],
+                    'status' => $sub['status'],
+                    'completedAt' => $sub['completed_at'],
+                    'completedBy' => $sub['completed_by']
+                ];
             }
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                ':id' => $u['id'],
-                ':name' => $u['name'],
-                ':color' => $u['color'],
-                ':avatar' => $u['avatar']
-            ]);
-        }
-        echo json_encode(['success' => true]);
-        break;
 
-    default:
-        http_response_code(404);
-        echo json_encode(['error' => 'Acción no encontrada']);
-        break;
+            $formattedInstances = [];
+            foreach ($instances as $inst) {
+                $inst['assignedTo'] = $inst['assigned_to'];
+                $inst['dueDate'] = $inst['due_date'];
+                $inst['estimatedMinutes'] = (int)$inst['estimated_minutes'];
+                $inst['weight'] = (int)$inst['weight'];
+                $inst['weekId'] = $inst['week_id'];
+                $inst['completedAt'] = $inst['completed_at'];
+                $inst['completedBy'] = $inst['completed_by'];
+                $inst['templateId'] = $inst['template_id'];
+                $inst['subtasks'] = $subtasksByParent[$inst['id']] ?? [];
+                $formattedInstances[] = $inst;
+            }
+
+            echo json_encode([
+                'status' => 'ok',
+                'users' => $users,
+                'settings' => $settings,
+                'templates' => $templates,
+                'instances' => $formattedInstances,
+                'activityLog' => $activity
+            ]);
+            break;
+
+        // Guardar o actualizar una tarea (Universal & Seguro)
+        case 'save_task':
+            $task = $input;
+            if (empty($task['id'])) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Falta ID de la tarea']);
+                exit;
+            }
+
+            $checkStmt = $pdo->prepare("SELECT id FROM task_instances WHERE id = :id");
+            $checkStmt->execute([':id' => $task['id']]);
+            $exists = $checkStmt->fetchColumn();
+
+            if ($exists) {
+                $updateStmt = $pdo->prepare("
+                    UPDATE task_instances SET
+                        name = :name,
+                        type = :type,
+                        category = :category,
+                        assigned_to = :assigned_to,
+                        due_date = :due_date,
+                        status = :status,
+                        weight = :weight,
+                        estimated_minutes = :estimated_minutes,
+                        priority = :priority,
+                        notes = :notes,
+                        week_id = :week_id,
+                        completed_at = :completed_at,
+                        completed_by = :completed_by
+                    WHERE id = :id
+                ");
+                $updateStmt->execute([
+                    ':id' => $task['id'],
+                    ':name' => $task['name'] ?? 'Tarea',
+                    ':type' => $task['type'] ?? 'single',
+                    ':category' => $task['category'] ?? 'hogar',
+                    ':assigned_to' => $task['assignedTo'] ?? 'user-1',
+                    ':due_date' => $task['dueDate'] ?? date('Y-m-d'),
+                    ':status' => $task['status'] ?? 'pending',
+                    ':weight' => (int)($task['weight'] ?? 1),
+                    ':estimated_minutes' => (int)($task['estimatedMinutes'] ?? 15),
+                    ':priority' => $task['priority'] ?? null,
+                    ':notes' => $task['notes'] ?? '',
+                    ':week_id' => $task['weekId'] ?? '2026-W35',
+                    ':completed_at' => $task['completedAt'] ?? null,
+                    ':completed_by' => $task['completedBy'] ?? null
+                ]);
+            } else {
+                $insertStmt = $pdo->prepare("
+                    INSERT INTO task_instances (id, template_id, name, type, category, assigned_to, due_date, status, weight, estimated_minutes, priority, notes, week_id, completed_at, completed_by)
+                    VALUES (:id, :template_id, :name, :type, :category, :assigned_to, :due_date, :status, :weight, :estimated_minutes, :priority, :notes, :week_id, :completed_at, :completed_by)
+                ");
+                $insertStmt->execute([
+                    ':id' => $task['id'],
+                    ':template_id' => $task['templateId'] ?? null,
+                    ':name' => $task['name'] ?? 'Tarea',
+                    ':type' => $task['type'] ?? 'single',
+                    ':category' => $task['category'] ?? 'hogar',
+                    ':assigned_to' => $task['assignedTo'] ?? 'user-1',
+                    ':due_date' => $task['dueDate'] ?? date('Y-m-d'),
+                    ':status' => $task['status'] ?? 'pending',
+                    ':weight' => (int)($task['weight'] ?? 1),
+                    ':estimated_minutes' => (int)($task['estimatedMinutes'] ?? 15),
+                    ':priority' => $task['priority'] ?? null,
+                    ':notes' => $task['notes'] ?? '',
+                    ':week_id' => $task['weekId'] ?? '2026-W35',
+                    ':completed_at' => $task['completedAt'] ?? null,
+                    ':completed_by' => $task['completedBy'] ?? null
+                ]);
+            }
+
+            // Sincronizar subtareas si tiene
+            if (!empty($task['subtasks']) && is_array($task['subtasks'])) {
+                foreach ($task['subtasks'] as $sub) {
+                    $subCheck = $pdo->prepare("SELECT id FROM subtasks WHERE id = :id");
+                    $subCheck->execute([':id' => $sub['id']]);
+                    if ($subCheck->fetchColumn()) {
+                        $subUpdate = $pdo->prepare("
+                            UPDATE subtasks SET
+                                name = :name,
+                                assigned_to = :assigned_to,
+                                status = :status,
+                                completed_at = :completed_at,
+                                completed_by = :completed_by
+                            WHERE id = :id
+                        ");
+                        $subUpdate->execute([
+                            ':id' => $sub['id'],
+                            ':name' => $sub['name'],
+                            ':assigned_to' => $sub['assignedTo'],
+                            ':status' => $sub['status'] ?? 'pending',
+                            ':completed_at' => $sub['completedAt'] ?? null,
+                            ':completed_by' => $sub['completedBy'] ?? null
+                        ]);
+                    } else {
+                        $subInsert = $pdo->prepare("
+                            INSERT INTO subtasks (id, parent_task_id, name, assigned_to, status, completed_at, completed_by)
+                            VALUES (:id, :parent_task_id, :name, :assigned_to, :status, :completed_at, :completed_by)
+                        ");
+                        $subInsert->execute([
+                            ':id' => $sub['id'],
+                            ':parent_task_id' => $task['id'],
+                            ':name' => $sub['name'],
+                            ':assigned_to' => $sub['assignedTo'],
+                            ':status' => $sub['status'] ?? 'pending',
+                            ':completed_at' => $sub['completedAt'] ?? null,
+                            ':completed_by' => $sub['completedBy'] ?? null
+                        ]);
+                    }
+                }
+            }
+
+            echo json_encode(['success' => true]);
+            break;
+
+        // Guardar usuarios (Universal)
+        case 'save_users':
+            $usersList = is_array($input) ? $input : [];
+            foreach ($usersList as $u) {
+                if (empty($u['id'])) continue;
+                $chk = $pdo->prepare("SELECT id FROM users WHERE id = :id");
+                $chk->execute([':id' => $u['id']]);
+                if ($chk->fetchColumn()) {
+                    $upd = $pdo->prepare("UPDATE users SET name = :name, color = :color, avatar = :avatar WHERE id = :id");
+                    $upd->execute([
+                        ':id' => $u['id'],
+                        ':name' => $u['name'] ?? 'Usuario',
+                        ':color' => $u['color'] ?? '#3b82f6',
+                        ':avatar' => $u['avatar'] ?? '👤'
+                    ]);
+                } else {
+                    $ins = $pdo->prepare("INSERT INTO users (id, name, color, avatar) VALUES (:id, :name, :color, :avatar)");
+                    $ins->execute([
+                        ':id' => $u['id'],
+                        ':name' => $u['name'] ?? 'Usuario',
+                        ':color' => $u['color'] ?? '#3b82f6',
+                        ':avatar' => $u['avatar'] ?? '👤'
+                    ]);
+                }
+            }
+            echo json_encode(['success' => true]);
+            break;
+
+        // Guardar lote de tareas (para sincronización inicial)
+        case 'save_instances_batch':
+            $batch = is_array($input) ? $input : [];
+            foreach ($batch as $t) {
+                if (empty($t['id'])) continue;
+                $c = $pdo->prepare("SELECT id FROM task_instances WHERE id = :id");
+                $c->execute([':id' => $t['id']]);
+                if (!$c->fetchColumn()) {
+                    $ins = $pdo->prepare("
+                        INSERT INTO task_instances (id, template_id, name, type, category, assigned_to, due_date, status, weight, estimated_minutes, priority, notes, week_id, completed_at, completed_by)
+                        VALUES (:id, :template_id, :name, :type, :category, :assigned_to, :due_date, :status, :weight, :estimated_minutes, :priority, :notes, :week_id, :completed_at, :completed_by)
+                    ");
+                    $ins->execute([
+                        ':id' => $t['id'],
+                        ':template_id' => $t['templateId'] ?? null,
+                        ':name' => $t['name'] ?? 'Tarea',
+                        ':type' => $t['type'] ?? 'single',
+                        ':category' => $t['category'] ?? 'hogar',
+                        ':assigned_to' => $t['assignedTo'] ?? 'user-1',
+                        ':due_date' => $t['dueDate'] ?? date('Y-m-d'),
+                        ':status' => $t['status'] ?? 'pending',
+                        ':weight' => (int)($t['weight'] ?? 1),
+                        ':estimated_minutes' => (int)($t['estimatedMinutes'] ?? 15),
+                        ':priority' => $t['priority'] ?? null,
+                        ':notes' => $t['notes'] ?? '',
+                        ':week_id' => $t['weekId'] ?? '2026-W35',
+                        ':completed_at' => $t['completedAt'] ?? null,
+                        ':completed_by' => $t['completedBy'] ?? null
+                    ]);
+                }
+            }
+            echo json_encode(['success' => true]);
+            break;
+
+        // Registrar actividad
+        case 'log_activity':
+            $log = $input;
+            $stmt = $pdo->prepare("
+                INSERT INTO activity_log (id, user_id, action, task_name, details, timestamp)
+                VALUES (:id, :user_id, :action, :task_name, :details, :timestamp)
+            ");
+            $stmt->execute([
+                ':id' => $log['id'] ?? uniqid('log_'),
+                ':user_id' => $log['userId'] ?? 'user-1',
+                ':action' => $log['action'] ?? 'update',
+                ':task_name' => $log['taskName'] ?? 'Tarea',
+                ':details' => $log['details'] ?? '',
+                ':timestamp' => $log['timestamp'] ?? date('Y-m-d H:i:s')
+            ]);
+            echo json_encode(['success' => true]);
+            break;
+
+        default:
+            http_response_code(404);
+            echo json_encode(['error' => 'Acción no encontrada: ' . htmlspecialchars($action)]);
+            break;
+    }
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode([
+        'error' => 'Error al procesar la solicitud',
+        'details' => $e->getMessage()
+    ]);
 }

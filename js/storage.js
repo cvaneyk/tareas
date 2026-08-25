@@ -255,7 +255,11 @@
 
       try {
         const res = await fetch(`${apiUrl}?action=get_all`, { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null);
+          const detailMsg = errBody?.details || errBody?.error || `HTTP ${res.status}`;
+          throw new Error(detailMsg);
+        }
         const data = await res.json();
 
         if (data.users && data.users.length > 0) {
@@ -263,6 +267,11 @@
         }
         if (data.instances && data.instances.length > 0) {
           localStorage.setItem(STORAGE_KEYS.INSTANCES, JSON.stringify(data.instances));
+        } else {
+          const localInst = this.getInstances();
+          if (localInst.length > 0) {
+            this.syncBatchToCloud(localInst);
+          }
         }
         if (data.templates && data.templates.length > 0) {
           localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(data.templates));
@@ -274,6 +283,20 @@
         return { success: true };
       } catch (err) {
         return { success: false, error: err.message };
+      }
+    },
+
+    async syncBatchToCloud(instances) {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl || !instances || instances.length === 0) return;
+      try {
+        await fetch(`${apiUrl}?action=save_instances_batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(instances)
+        });
+      } catch (err) {
+        console.warn('Batch sync failed:', err);
       }
     },
 
