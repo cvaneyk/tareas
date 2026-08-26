@@ -693,6 +693,7 @@
       modalBody.querySelector('.action-btn-reassign')?.addEventListener('click', () => {
         task.assignedTo = otherUser.id;
         storage.saveInstances(instances);
+        storage.syncTaskToCloud(task);
         storage.logActivity(otherUser.id, 'reassign', task.name, `Reasignada a ${otherUser.name}`);
         ui.showToast(`Tarea reasignada a ${otherUser.name}`, '🔄');
         this.closeModals();
@@ -705,8 +706,9 @@
         task.dueDate = formatDateISO(d);
         task.weekId = getWeekId(d);
         storage.saveInstances(instances);
+        storage.syncTaskToCloud(task);
         storage.logActivity(task.assignedTo, 'reschedule', task.name, `Pospuesta al ${task.dueDate}`);
-        ui.showToast(`Tarea pospuesta al ${task.dueDate}`, '⏳');
+        ui.showToast(`Tarea pospuesta al ${task.dueDate}`, '🗓️');
         this.closeModals();
         this.refreshCurrentView();
       });
@@ -715,6 +717,7 @@
         if (confirm(`¿Eliminar la tarea "${task.name}"?`)) {
           const filtered = instances.filter(i => i.id !== taskId);
           storage.saveInstances(filtered);
+          storage.deleteTaskFromCloud(taskId);
           ui.showToast(`Tarea eliminada`, '🗑️');
           this.closeModals();
           this.refreshCurrentView();
@@ -780,6 +783,7 @@
       if (confirm('¿Eliminar esta plantilla de tarea recurrente?')) {
         const templates = storage.getTemplates().filter(t => t.id !== tmplId);
         storage.saveTemplates(templates);
+        storage.deleteTemplateFromCloud(tmplId);
         ui.showToast('Plantilla eliminada', '🗑️');
         this.refreshCurrentView();
       }

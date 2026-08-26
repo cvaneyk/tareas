@@ -269,11 +269,21 @@ try {
                 $formattedInstances[] = $inst;
             }
 
+            $formattedTemplates = [];
+            foreach ($templates as $t) {
+                $t['defaultAssignee'] = $t['default_assignee'];
+                $t['frequencyConfig'] = $t['frequency_config'] ? json_decode($t['frequency_config'], true) : null;
+                $t['estimatedMinutes'] = (int)$t['estimated_minutes'];
+                $t['weight'] = (int)$t['weight'];
+                $t['active'] = (bool)$t['active'];
+                $formattedTemplates[] = $t;
+            }
+
             echo json_encode([
                 'status' => 'ok',
                 'users' => $users,
                 'settings' => $settings,
-                'templates' => $templates,
+                'templates' => $formattedTemplates,
                 'instances' => $formattedInstances,
                 'activityLog' => $activity
             ]);
@@ -403,6 +413,99 @@ try {
                 }
             }
 
+            echo json_encode(['success' => true]);
+            break;
+
+        // Eliminar una tarea
+        case 'delete_task':
+            $taskId = $_GET['id'] ?? null;
+            if (!$taskId) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Falta ID de la tarea']);
+                exit;
+            }
+            $delSub = $pdo->prepare("DELETE FROM subtasks WHERE parent_task_id = :id");
+            $delSub->execute([':id' => $taskId]);
+            
+            $del = $pdo->prepare("DELETE FROM task_instances WHERE id = :id");
+            $del->execute([':id' => $taskId]);
+            echo json_encode(['success' => true]);
+            break;
+
+        // Guardar configuración (Settings)
+        case 'save_settings':
+            $set = $input;
+            $chk = $pdo->prepare("SELECT id FROM house_settings WHERE id = 'default'");
+            $chk->execute();
+            if ($chk->fetchColumn()) {
+                $upd = $pdo->prepare("UPDATE house_settings SET house_name = :hn, start_day = :sd, theme = :th, notifications = :notif WHERE id = 'default'");
+                $upd->execute([
+                    ':hn' => $set['houseName'] ?? 'Nuestra Casa 🏠',
+                    ':sd' => $set['startDay'] ?? 'monday',
+                    ':th' => $set['theme'] ?? 'light',
+                    ':notif' => isset($set['notifications']) ? (int)$set['notifications'] : 1
+                ]);
+            } else {
+                $ins = $pdo->prepare("INSERT INTO house_settings (id, house_name, start_day, theme, notifications) VALUES ('default', :hn, :sd, :th, :notif)");
+                $ins->execute([
+                    ':hn' => $set['houseName'] ?? 'Nuestra Casa 🏠',
+                    ':sd' => $set['startDay'] ?? 'monday',
+                    ':th' => $set['theme'] ?? 'light',
+                    ':notif' => isset($set['notifications']) ? (int)$set['notifications'] : 1
+                ]);
+            }
+            echo json_encode(['success' => true]);
+            break;
+
+        // Guardar lista de plantillas
+        case 'save_templates':
+            $tmplList = is_array($input) ? $input : [];
+            foreach ($tmplList as $t) {
+                if (empty($t['id'])) continue;
+                $c = $pdo->prepare("SELECT id FROM task_templates WHERE id = :id");
+                $c->execute([':id' => $t['id']]);
+                if ($c->fetchColumn()) {
+                    $u = $pdo->prepare("UPDATE task_templates SET name=:nm, type=:ty, category=:cat, frequency=:fq, frequency_config=:fqc, default_assignee=:da, weight=:w, estimated_minutes=:em, notes=:nt, active=:act WHERE id=:id");
+                    $u->execute([
+                        ':id' => $t['id'],
+                        ':nm' => $t['name'],
+                        ':ty' => $t['type'] ?? 'recurrent',
+                        ':cat' => $t['category'] ?? 'hogar',
+                        ':fq' => $t['frequency'] ?? 'daily',
+                        ':fqc' => isset($t['frequencyConfig']) ? json_encode($t['frequencyConfig']) : null,
+                        ':da' => $t['defaultAssignee'] ?? 'user-1',
+                        ':w' => (int)($t['weight'] ?? 1),
+                        ':em' => (int)($t['estimatedMinutes'] ?? 15),
+                        ':nt' => $t['notes'] ?? '',
+                        ':act' => isset($t['active']) ? (int)$t['active'] : 1
+                    ]);
+                } else {
+                    $i = $pdo->prepare("INSERT INTO task_templates (id, name, type, category, frequency, frequency_config, default_assignee, weight, estimated_minutes, notes, active) VALUES (:id, :nm, :ty, :cat, :fq, :fqc, :da, :w, :em, :nt, :act)");
+                    $i->execute([
+                        ':id' => $t['id'],
+                        ':nm' => $t['name'],
+                        ':ty' => $t['type'] ?? 'recurrent',
+                        ':cat' => $t['category'] ?? 'hogar',
+                        ':fq' => $t['frequency'] ?? 'daily',
+                        ':fqc' => isset($t['frequencyConfig']) ? json_encode($t['frequencyConfig']) : null,
+                        ':da' => $t['defaultAssignee'] ?? 'user-1',
+                        ':w' => (int)($t['weight'] ?? 1),
+                        ':em' => (int)($t['estimatedMinutes'] ?? 15),
+                        ':nt' => $t['notes'] ?? '',
+                        ':act' => isset($t['active']) ? (int)$t['active'] : 1
+                    ]);
+                }
+            }
+            echo json_encode(['success' => true]);
+            break;
+
+        // Eliminar plantilla
+        case 'delete_template':
+            $tmplId = $_GET['id'] ?? null;
+            if ($tmplId) {
+                $del = $pdo->prepare("DELETE FROM task_templates WHERE id = :id");
+                $del->execute([':id' => $tmplId]);
+            }
             echo json_encode(['success' => true]);
             break;
 

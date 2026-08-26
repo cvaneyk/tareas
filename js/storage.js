@@ -193,6 +193,7 @@
 
     saveSettings(settings) {
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+      this.syncSettingsToCloud(settings);
     },
 
     getTemplates() {
@@ -202,6 +203,7 @@
 
     saveTemplates(templates) {
       localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+      this.syncTemplatesToCloud(templates);
     },
 
     getInstances() {
@@ -264,6 +266,15 @@
 
         if (data.users && data.users.length > 0) {
           localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data.users));
+        }
+        if (data.settings && Object.keys(data.settings).length > 0) {
+          const formattedSettings = {
+            houseName: data.settings.house_name,
+            startDay: data.settings.start_day,
+            theme: data.settings.theme,
+            notifications: Boolean(data.settings.notifications)
+          };
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(formattedSettings));
         }
         if (data.instances && data.instances.length > 0) {
           localStorage.setItem(STORAGE_KEYS.INSTANCES, JSON.stringify(data.instances));
@@ -340,6 +351,46 @@
       } catch (err) {
         console.warn('Sync users failed:', err);
       }
+    },
+
+    async syncSettingsToCloud(settings) {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl) return;
+      try {
+        await fetch(`${apiUrl}?action=save_settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings)
+        });
+      } catch (err) {}
+    },
+
+    async syncTemplatesToCloud(templates) {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl) return;
+      try {
+        await fetch(`${apiUrl}?action=save_templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(templates)
+        });
+      } catch (err) {}
+    },
+
+    async deleteTaskFromCloud(taskId) {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl) return;
+      try {
+        await fetch(`${apiUrl}?action=delete_task&id=${encodeURIComponent(taskId)}`);
+      } catch (err) {}
+    },
+
+    async deleteTemplateFromCloud(tmplId) {
+      const apiUrl = this.getApiUrl();
+      if (!apiUrl) return;
+      try {
+        await fetch(`${apiUrl}?action=delete_template&id=${encodeURIComponent(tmplId)}`);
+      } catch (err) {}
     },
 
     exportDataJSON() {
