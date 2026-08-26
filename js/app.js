@@ -539,6 +539,7 @@
     }
 
     openAddTaskModal(defaultDate = null) {
+      this.editingTemplateId = null;
       const users = storage.getUsers();
       const modal = document.getElementById('modal-add-task');
       if (!modal) return;
@@ -593,21 +594,49 @@
 
       if (isRecurring || type === 'recurrent') {
         const templates = storage.getTemplates();
-        const newTmpl = {
-          id: generateId('tmpl'),
-          name,
-          type: type === 'chapuza' ? 'chapuza' : 'recurrent',
-          category,
-          frequency,
-          frequencyConfig: { anchorDate: dueDate },
-          defaultAssignee: assigneeMode,
-          weight,
-          estimatedMinutes,
-          active: true,
-          notes
+        const freqConfig = { 
+          anchorDate: dueDate,
+          dayOfWeek: taskDate.getDay()
         };
-        templates.push(newTmpl);
+        
+        if (this.editingTemplateId) {
+          // Update existing template
+          const idx = templates.findIndex(t => t.id === this.editingTemplateId);
+          if (idx !== -1) {
+            templates[idx] = {
+              ...templates[idx],
+              name,
+              category,
+              frequency,
+              frequencyConfig: freqConfig,
+              defaultAssignee: assigneeMode,
+              weight,
+              estimatedMinutes,
+              notes
+            };
+            ui.showToast('Plantilla actualizada', '✅');
+          }
+        } else {
+          // Create new template
+          const newTmpl = {
+            id: generateId('tmpl'),
+            name,
+            type: type === 'chapuza' ? 'chapuza' : 'recurrent',
+            category,
+            frequency,
+            frequencyConfig: freqConfig,
+            defaultAssignee: assigneeMode,
+            weight,
+            estimatedMinutes,
+            active: true,
+            notes
+          };
+          templates.push(newTmpl);
+          ui.showToast('Plantilla creada', '✅');
+        }
+        
         storage.saveTemplates(templates);
+        this.editingTemplateId = null;
       }
 
       const instances = storage.getInstances();
@@ -803,6 +832,7 @@
       if (!tmpl) return;
 
       this.openAddTaskModal();
+      this.editingTemplateId = tmplId; // Set this AFTER openAddTaskModal clears it
       document.getElementById('add-task-name').value = tmpl.name;
       document.getElementById('add-task-category').value = tmpl.category;
       document.getElementById('add-task-weight').value = tmpl.weight;

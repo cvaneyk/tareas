@@ -70,7 +70,7 @@
           return Math.abs(diffDays) % interval === 0;
         }
         case 'weekly': {
-          const targetDay = template.frequencyConfig?.dayOfWeek ?? 0;
+          const targetDay = template.frequencyConfig?.dayOfWeek ?? anchor.getDay();
           return dayOfWeek === targetDay;
         }
         case 'custom_days': {
@@ -94,6 +94,7 @@
       const weekId = getWeekId(weekDates[0]);
 
       const newInstances = [...instances];
+      const newlyCreated = [];
       let createdCount = 0;
 
       for (const date of weekDates) {
@@ -137,6 +138,7 @@
               };
 
               newInstances.push(newInst);
+              newlyCreated.push(newInst);
               createdCount++;
             }
           }
@@ -145,6 +147,7 @@
 
       if (createdCount > 0) {
         storage.saveInstances(newInstances);
+        storage.syncBatchToCloud(newlyCreated);
       }
 
       return { weekId, createdCount };
