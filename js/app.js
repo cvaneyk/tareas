@@ -11,8 +11,8 @@
   class App {
     constructor() {
       this.currentView = 'inicio';
-      this.referenceDate = new Date('2026-08-25T12:00:00');
-      this.weekDate = new Date('2026-08-25T12:00:00');
+      this.referenceDate = new Date();
+      this.weekDate = new Date();
       this.weekFilter = 'all';
       this.activeTaskId = null;
     }
