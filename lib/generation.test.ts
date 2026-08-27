@@ -65,10 +65,10 @@ describe('ensureRangeGenerated', () => {
     expect(await prisma.taskOccurrence.count()).toBe(7);
   });
 
-  it('la base de datos rechaza un duplicado aunque el codigo lo intente', async () => {
+  it('la base de datos rechaza ocupar dos veces la misma ranura', async () => {
     // La garantia no depende de que generation.ts sea correcto: es una
-    // restriccion UNIQUE. Este es el fallo n4 del diagnostico, ahora
-    // imposible por esquema.
+    // restriccion UNIQUE sobre (plantilla, ranura). Este es el fallo n4 del
+    // diagnostico, ahora imposible por esquema.
     const template = await createDailyTemplate();
     await ensureRangeGenerated(MONDAY, SUNDAY);
 
@@ -81,6 +81,7 @@ describe('ensureRangeGenerated', () => {
           category: 'cocina',
           assignedToId: 'user-1',
           dueDate: toPrismaDate(MONDAY),
+          slotDate: toPrismaDate(MONDAY),
           weight: 1,
           estimatedMinutes: 15,
         },
@@ -88,6 +89,27 @@ describe('ensureRangeGenerated', () => {
     ).rejects.toThrow();
 
     expect(await prisma.taskOccurrence.count()).toBe(7);
+  });
+
+  it('una tarea pospuesta puede coincidir en dia con la de esa fecha', async () => {
+    // Posponer el lunes al martes deja dos tareas el martes. No es un
+    // duplicado: ocupan ranuras distintas (lunes y martes).
+    const template = await createDailyTemplate();
+    await ensureRangeGenerated(MONDAY, SUNDAY);
+
+    const monday = await prisma.taskOccurrence.findFirstOrThrow({
+      where: { templateId: template.id, slotDate: toPrismaDate(MONDAY) },
+    });
+
+    await prisma.taskOccurrence.update({
+      where: { id: monday.id },
+      data: { dueDate: toPrismaDate(addDays(MONDAY, 1)) },
+    });
+
+    const tuesday = await prisma.taskOccurrence.count({
+      where: { dueDate: toPrismaDate(addDays(MONDAY, 1)) },
+    });
+    expect(tuesday).toBe(2);
   });
 
   it('permite varias tareas sueltas el mismo dia (templateId nulo)', async () => {

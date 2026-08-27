@@ -21,6 +21,7 @@ hacía que perder datos fuese el comportamiento normal.
 | El móvil seguía viendo la app vieja | El service worker era cache-first para todo, con caché de nombre fijo | `public/sw.js` es ahora un interruptor de apagado que se auto-desinstala |
 | Estadísticas falseadas | `seedDemoData()` sembraba 3 semanas de histórico con `Math.random()` | Eliminado. El seed solo crea personas, ajustes y tus recurrentes reales |
 | Días desplazados | Fechas guardadas sin zona horaria y reinterpretadas en JS | Las fechas de vencimiento son `DATE` y viajan como `'YYYY-MM-DD'` de punta a punta |
+| Borrar o posponer una tarea no hacía nada | Al quitarla se liberaba su hueco del día y el generador la volvía a crear en el siguiente render | Cada tarea recurrente ocupa una **ranura** (`slot_date`) distinta de su fecha de vencimiento. Posponer mueve la fecha y deja la ranura ocupada; borrar deja una lápida en ella |
 
 ---
 
@@ -87,7 +88,11 @@ npm run dev                 # http://localhost:3000
 **Comprobaciones:**
 
 ```bash
+<<<<<<< Updated upstream
 npm test                    # 62 tests, incl. integración contra PostgreSQL real
+=======
+npm test                    # 85 tests, incl. integración contra PostgreSQL real
+>>>>>>> Stashed changes
 npm run typecheck
 npm run build
 ```

@@ -7,8 +7,10 @@ export default async function SettingsPage() {
 
   const counts = {
     templates: await prisma.taskTemplate.count({ where: { active: true } }),
-    occurrences: await prisma.taskOccurrence.count(),
-    completed: await prisma.taskOccurrence.count({ where: { status: 'COMPLETED' } }),
+    occurrences: await prisma.taskOccurrence.count({ where: { deletedAt: null } }),
+    completed: await prisma.taskOccurrence.count({
+      where: { status: 'COMPLETED', deletedAt: null },
+    }),
   };
 
   return <SettingsForms house={house} counts={counts} />;

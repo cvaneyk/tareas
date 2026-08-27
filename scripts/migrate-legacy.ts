@@ -609,6 +609,9 @@ async function main() {
         category: instance.category ?? 'hogar',
         assignedToId,
         dueDate: toPrismaDate(dueDate),
+        // Las tareas de una recurrente ocupan la ranura de su propia fecha; si
+        // se quedaran sin ranura, el generador las volvería a crear todas.
+        slotDate: realTemplateId ? toPrismaDate(dueDate) : null,
         status: candidate.status,
         suggestible: instance.type === 'suggested',
         weight: num(instance.weight, 1),

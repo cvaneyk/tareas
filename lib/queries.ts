@@ -84,6 +84,13 @@ export interface HouseView {
 
 const OCCURRENCE_INCLUDE = { subtasks: { orderBy: { position: 'asc' } } } as const;
 
+/**
+ * Las tareas borradas se descartan siempre. Sus filas siguen en la base de datos
+ * porque tienen que ocupar su ranura de recurrencia (ver actions/tasks.ts), pero
+ * no existen para la interfaz ni para las estadísticas.
+ */
+const NOT_DELETED = { deletedAt: null } as const;
+
 type OccurrenceRow = Awaited<
   ReturnType<typeof prisma.taskOccurrence.findMany<{ include: typeof OCCURRENCE_INCLUDE }>>
 >[number];
@@ -146,7 +153,7 @@ export async function getTasksInRange(from: DateStr, to: DateStr): Promise<TaskV
   await ensureRangeGenerated(from, to);
 
   const rows = await prisma.taskOccurrence.findMany({
-    where: { dueDate: { gte: toPrismaDate(from), lte: toPrismaDate(to) } },
+    where: { ...NOT_DELETED, dueDate: { gte: toPrismaDate(from), lte: toPrismaDate(to) } },
     include: OCCURRENCE_INCLUDE,
     orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
   });
@@ -163,7 +170,10 @@ export async function getWeekTasks(date: DateStr, startDay: StartDay = 'monday')
 }
 
 export async function getTask(id: string): Promise<TaskView | null> {
-  const row = await prisma.taskOccurrence.findUnique({ where: { id }, include: OCCURRENCE_INCLUDE });
+  const row = await prisma.taskOccurrence.findFirst({
+    where: { id, ...NOT_DELETED },
+    include: OCCURRENCE_INCLUDE,
+  });
   return row ? toTaskView(row) : null;
 }
 
@@ -249,6 +259,7 @@ export async function getWeekHistory(
 
   const rows = await prisma.taskOccurrence.findMany({
     where: {
+      ...NOT_DELETED,
       dueDate: { gte: toPrismaDate(oldestStart), lte: toPrismaDate(addDays(currentStart, 6)) },
     },
     include: OCCURRENCE_INCLUDE,
@@ -271,7 +282,7 @@ export async function getWeekHistory(
 /** Todas las tareas desde una fecha, para las estadísticas por periodo. */
 export async function getTasksSince(from: DateStr, to: DateStr): Promise<TaskView[]> {
   const rows = await prisma.taskOccurrence.findMany({
-    where: { dueDate: { gte: toPrismaDate(from), lte: toPrismaDate(to) } },
+    where: { ...NOT_DELETED, dueDate: { gte: toPrismaDate(from), lte: toPrismaDate(to) } },
     include: OCCURRENCE_INCLUDE,
     orderBy: { dueDate: 'asc' },
   });

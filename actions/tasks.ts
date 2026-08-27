@@ -158,28 +158,22 @@ export async function reassignTask(taskId: string): Promise<ActionResult> {
   return { ok: true, message: `Tarea reasignada a ${name?.name ?? 'la otra persona'}` };
 }
 
+/**
+ * Mueve la tarea a otro día.
+ *
+ * Solo cambia `dueDate`. `slotDate` se queda donde estaba, así que la ranura de
+ * la recurrencia sigue ocupada y el generador no vuelve a crear la tarea en su
+ * día original — que es lo que hacía que posponer no pareciera hacer nada.
+ */
 export async function postponeTask(taskId: string, days = 1): Promise<ActionResult> {
   const task = await prisma.taskOccurrence.findUnique({ where: { id: taskId } });
-  if (!task) return { ok: false, error: 'Esa tarea ya no existe' };
+  if (!task || task.deletedAt) return { ok: false, error: 'Esa tarea ya no existe' };
 
   const target = addDays(toDateStr(task.dueDate), days);
 
-  // Si la plantilla ya tiene una ocurrencia ese día, la restricción UNIQUE la
-  // rechazaría. Desligamos esta copia de la plantilla en vez de fallar: pasa a
-  // ser una tarea suelta pospuesta.
-  const clash = task.templateId
-    ? await prisma.taskOccurrence.findFirst({
-        where: { templateId: task.templateId, dueDate: toPrismaDate(target) },
-        select: { id: true },
-      })
-    : null;
-
   await prisma.taskOccurrence.update({
     where: { id: taskId },
-    data: {
-      dueDate: toPrismaDate(target),
-      ...(clash ? { templateId: null, seq: null } : {}),
-    },
+    data: { dueDate: toPrismaDate(target) },
   });
 
   await log(task.assignedToId, 'reschedule', task.name, `Pospuesta al ${target}`);
@@ -188,11 +182,28 @@ export async function postponeTask(taskId: string, days = 1): Promise<ActionResu
   return { ok: true, message: `Pospuesta al ${target}` };
 }
 
+/**
+ * Elimina una tarea de un día concreto.
+ *
+ * Si viene de una recurrente, la fila se conserva marcada como borrada en vez
+ * de eliminarse: tiene que seguir ocupando su ranura, o el generador la
+ * recrearía en el siguiente render. La plantilla sigue activa y los demás días
+ * no se ven afectados; para dejar de repetirla, se usa Recurrentes.
+ */
 export async function deleteTask(taskId: string): Promise<ActionResult> {
   const task = await prisma.taskOccurrence.findUnique({ where: { id: taskId } });
-  if (!task) return { ok: false, error: 'Esa tarea ya no existe' };
+  if (!task || task.deletedAt) return { ok: false, error: 'Esa tarea ya no existe' };
 
-  await prisma.taskOccurrence.delete({ where: { id: taskId } });
+  if (task.templateId) {
+    await prisma.taskOccurrence.update({
+      where: { id: taskId },
+      data: { deletedAt: new Date(), status: 'PENDING', completedAt: null, completedById: null },
+    });
+  } else {
+    // Una tarea suelta no la recrea nadie: se puede borrar de verdad.
+    await prisma.taskOccurrence.delete({ where: { id: taskId } });
+  }
+
   await log(task.assignedToId, 'delete', task.name, 'Tarea eliminada');
 
   revalidateAll();

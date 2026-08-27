@@ -133,8 +133,19 @@ model TaskOccurrence {
   category String   @default("hogar")
 
   assignedToId String   @map("assigned_to_id")
-  dueDate      DateTime @map("due_date") @db.Date
-  status       Status   @default(PENDING)
+
+  /// Cuándo toca hacerla. Cambia al posponer.
+  dueDate DateTime @map("due_date") @db.Date
+
+  /// La ranura de recurrencia que ocupa: el día en que la plantilla disparó.
+  /// Es null en las tareas sueltas.
+  ///
+  /// Separarla de dueDate es lo que permite posponer una tarea recurrente sin
+  /// que el generador la vuelva a crear en su día original: la ranura sigue
+  /// ocupada aunque la tarea se haya movido.
+  slotDate DateTime? @map("slot_date") @db.Date
+
+  status Status @default(PENDING)
 
   suggestible      Boolean @default(false)
   weight           Int     @default(1)
@@ -145,6 +156,10 @@ model TaskOccurrence {
   completedAt   DateTime? @map("completed_at")
   completedById String?   @map("completed_by_id")
 
+  /// Borrado suave. Una tarea de una recurrente no se puede borrar del todo: su
+  /// fila tiene que seguir ocupando la ranura, o el generador la recrearía.
+  deletedAt DateTime? @map("deleted_at")
+
   template    TaskTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
   assignedTo  User                @relation("occurrenceAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
   completedBy User?               @relation("occurrenceCompleter", fields: [completedById], references: [id], onDelete: SetNull)
@@ -153,11 +168,12 @@ model TaskOccurrence {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  /// En PostgreSQL los NULL son distintos entre sí, así que esto restringe las
-  /// tareas de plantilla sin estorbar a las sueltas (templateId = null).
-  @@unique([templateId, dueDate])
+  /// Una ocurrencia por plantilla y ranura. En PostgreSQL los NULL son
+  /// distintos entre sí, así que esto no estorba a las tareas sueltas.
+  @@unique([templateId, slotDate])
   @@index([dueDate])
   @@index([status])
+  @@index([deletedAt])
   @@map("task_occurrences")
 }
 

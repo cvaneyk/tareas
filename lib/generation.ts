@@ -4,7 +4,7 @@
  * Tres garantías, en orden de importancia:
  *
  * 1. Es idempotente. Llamarla mil veces produce el mismo resultado que
- *    llamarla una. La restricción @@unique([templateId, dueDate]) lo impone a
+ *    llamarla una. La restricción @@unique([templateId, slotDate]) lo impone a
  *    nivel de base de datos, así que ni un bug en este fichero puede duplicar
  *    una tarea.
  * 2. Nunca inventa pasado. Solo genera desde el inicio de la semana actual en
@@ -68,16 +68,22 @@ export async function ensureRangeGenerated(from: DateStr, to: DateStr): Promise<
 
     if (templates.length === 0) return 0;
 
-    // Qué existe ya en el rango, para no volver a pedirlo fila a fila.
+    // Qué ranuras están ya ocupadas en el rango, para no pedirlo fila a fila.
+    //
+    // Se busca por slotDate, no por dueDate: una tarea pospuesta sigue ocupando
+    // la ranura de su día original. Y NO se filtran las borradas: su fila existe
+    // justamente para que el generador no vuelva a crearlas.
     const existing = await tx.taskOccurrence.findMany({
       where: {
         templateId: { in: templates.map((t) => t.id) },
-        dueDate: { gte: toPrismaDate(start), lte: toPrismaDate(to) },
+        slotDate: { gte: toPrismaDate(start), lte: toPrismaDate(to) },
       },
-      select: { templateId: true, dueDate: true },
+      select: { templateId: true, slotDate: true },
     });
 
-    const seen = new Set(existing.map((o) => `${o.templateId}|${toDateStr(o.dueDate)}`));
+    const seen = new Set(
+      existing.map((o) => `${o.templateId}|${o.slotDate ? toDateStr(o.slotDate) : ''}`),
+    );
 
     let count = 0;
 
@@ -103,6 +109,7 @@ export async function ensureRangeGenerated(from: DateStr, to: DateStr): Promise<
             category: template.category,
             assignedToId,
             dueDate: toPrismaDate(date),
+            slotDate: toPrismaDate(date),
             suggestible: template.suggestible,
             weight: template.weight,
             estimatedMinutes: template.estimatedMinutes,
@@ -158,7 +165,12 @@ export async function regenerateFutureForTemplate(templateId: string): Promise<v
     where: {
       templateId,
       status: 'PENDING',
-      dueDate: { gte: toPrismaDate(today) },
+      // Por ranura, no por fecha de vencimiento: una tarea pospuesta al futuro
+      // ocupa una ranura pasada, y borrarla la haría desaparecer sin que nada
+      // la recreara.
+      slotDate: { gte: toPrismaDate(today) },
+      // Las lápidas se quedan: son días que se borraron a propósito.
+      deletedAt: null,
     },
   });
 
@@ -194,6 +206,11 @@ export async function deactivateTemplate(templateId: string, tx?: Prisma.Transac
 
   await client.taskTemplate.update({ where: { id: templateId }, data: { active: false } });
   await client.taskOccurrence.deleteMany({
-    where: { templateId, status: 'PENDING', dueDate: { gte: toPrismaDate(today) } },
+    where: {
+      templateId,
+      status: 'PENDING',
+      dueDate: { gte: toPrismaDate(today) },
+      deletedAt: null,
+    },
   });
 }

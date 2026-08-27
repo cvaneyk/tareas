@@ -174,9 +174,10 @@ describe('postponeTask', () => {
     expect(saved.dueDate.toISOString().slice(0, 10)).toBe(addDays(TODAY, 1));
   });
 
-  it('posponer sobre un dia que ya tiene esa recurrente no rompe la restriccion', async () => {
-    // Una plantilla diaria ya ocupa el día de mañana. Posponer la de hoy
-    // chocaría con la UNIQUE; en vez de fallar, la desliga de la plantilla.
+  it('posponer sobre un dia que ya tiene esa recurrente funciona', async () => {
+    // Una plantilla diaria ya ocupa el día de mañana. Posponer la de hoy deja
+    // dos tareas mañana, sin chocar con la restricción: cada una conserva su
+    // propia ranura.
     const template = await prisma.taskTemplate.create({
       data: {
         name: 'Sacar al perro',
@@ -199,8 +200,16 @@ describe('postponeTask', () => {
     expect(result.ok).toBe(true);
 
     const saved = await prisma.taskOccurrence.findUniqueOrThrow({ where: { id: today.id } });
-    expect(saved.templateId).toBeNull();
     expect(saved.dueDate.toISOString().slice(0, 10)).toBe(addDays(TODAY, 1));
+    // Sigue siendo de la recurrente y sigue ocupando la ranura de hoy, que es
+    // lo que impide que el generador la recree hoy.
+    expect(saved.templateId).toBe(template.id);
+    expect(saved.slotDate?.toISOString().slice(0, 10)).toBe(TODAY);
+
+    const tomorrow = await prisma.taskOccurrence.count({
+      where: { dueDate: toPrismaDate(addDays(TODAY, 1)) },
+    });
+    expect(tomorrow).toBe(2);
   });
 });
 
