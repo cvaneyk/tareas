@@ -9,3 +9,5 @@ legacy.json
 data
 *.log
 README.md
+.container-sim
+.pglite

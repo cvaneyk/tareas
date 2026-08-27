@@ -208,10 +208,14 @@ describe('applyMigrations', () => {
 describe('la migracion real del proyecto', () => {
   it('se aplica limpia sobre una base de datos vacia', async () => {
     const result = await applyMigrations(executor, join(import.meta.dirname, '..', 'prisma', 'migrations'));
+<<<<<<< HEAD
     expect(result.applied).toEqual([
       '20260827000000_init',
       '20260828000000_slot_date_y_borrado_suave',
     ]);
+=======
+    expect(result.applied).toEqual(['20260827000000_init']);
+>>>>>>> 1dad4baf1b8b6a68ab35bde562a21ab266842fee
 
     const tables = await db.query<{ table_name: string }>(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
@@ -228,6 +232,7 @@ describe('la migracion real del proyecto', () => {
     ]);
   });
 
+<<<<<<< HEAD
   it('actualiza una base de datos que ya tiene tareas sin perder nada', async () => {
     // Este es el camino real de una instalación en marcha: la migración de las
     // ranuras se aplica sobre datos que ya existen.
@@ -282,6 +287,8 @@ describe('la migracion real del proyecto', () => {
     ).rejects.toThrow();
   });
 
+=======
+>>>>>>> 1dad4baf1b8b6a68ab35bde562a21ab266842fee
   it('crea la restriccion que impide tareas duplicadas', async () => {
     await applyMigrations(executor, join(import.meta.dirname, '..', 'prisma', 'migrations'));
 
@@ -289,7 +296,11 @@ describe('la migracion real del proyecto', () => {
       "SELECT indexname FROM pg_indexes WHERE tablename = 'task_occurrences'",
     );
     expect(indexes.rows.map((r) => r.indexname)).toContain(
+<<<<<<< HEAD
       'task_occurrences_template_id_slot_date_key',
+=======
+      'task_occurrences_template_id_due_date_key',
+>>>>>>> 1dad4baf1b8b6a68ab35bde562a21ab266842fee
     );
   });
 });

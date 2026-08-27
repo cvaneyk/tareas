@@ -14,8 +14,7 @@ function createClient(): PrismaClient {
   }
 
   // Tamaño del pool. Por defecto el de pg (10), suficiente para dos personas.
-  // Bajarlo es útil si el PostgreSQL del hosting tiene pocas conexiones, o
-  // contra el servidor local de PGlite, que solo admite una a la vez.
+  // Bajarlo es útil si el PostgreSQL del hosting tiene pocas conexiones.
   const max = Number(process.env.DATABASE_POOL_MAX);
 
   return new PrismaClient({
@@ -27,6 +26,28 @@ function createClient(): PrismaClient {
   });
 }
 
-export const prisma = globalForPrisma.prisma ?? createClient();
+function getClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    const client = createClient();
+    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client;
+    else return (globalForPrisma.prisma = client);
+  }
+  return globalForPrisma.prisma;
+}
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+/**
+ * Cliente perezoso: la conexión no se crea hasta la primera consulta.
+ *
+ * Es necesario porque `next build` importa cada ruta para leer su
+ * configuración, y durante el build de Docker todavía no existe DATABASE_URL.
+ * Si el cliente se construyera al cargar el módulo, el build fallaría sin
+ * necesidad — no hay ninguna consulta que hacer en ese momento.
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const client = getClient() as unknown as Record<string | symbol, unknown>;
+    const value = client[property];
+    // Los métodos ($transaction, $queryRaw…) necesitan su `this` original.
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
