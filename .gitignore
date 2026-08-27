@@ -1,13 +1,28 @@
-# Archivo de variables de entorno con credenciales secretas
+# Variables de entorno con credenciales
 .env
-.env.local
+.env.*
+!.env.example
 
-# Bases de datos locales
-*.sqlite
-*.sqlite3
-*.db
+# Dependencias y build
+node_modules/
+.next/
+out/
+build/
+dist/
+generated/
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+prisma/*.db
+
+# Volcado de la base de datos antigua (puede contener datos personales)
+legacy.json
+data/
 
 # Logs y temporales
 *.log
 .DS_Store
 Thumbs.db
+node_modules
+.pglite/

@@ -1,6 +1,11 @@
+node_modules
+.next
+generated
 .git
-.gitignore
 .env
-*.sqlite
-*.sqlite3
-*.md
+.env.*
+!.env.example
+legacy.json
+data
+*.log
+README.md
