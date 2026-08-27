@@ -52,6 +52,7 @@ datos al servidor cada 20 s y al volver a la app: es un *refetch*, no un
 | `lib/stats.ts` | Cumplimiento y reparto por puntos |
 | `actions/` | Server Actions: toda escritura pasa por aquí, con validación Zod |
 | `scripts/migrate-legacy.ts` | Importa los datos de la versión antigua |
+| `scripts/migrate-deploy.ts` | Aplica las migraciones en producción, sin el CLI de Prisma |
 
 ---
 
@@ -87,7 +88,7 @@ npm run dev                 # http://localhost:3000
 **Comprobaciones:**
 
 ```bash
-npm test                    # 62 tests, incl. integración contra PostgreSQL real
+npm test                    # 74 tests, incl. integración contra PostgreSQL real
 npm run typecheck
 npm run build
 ```
@@ -198,8 +199,9 @@ UTC y el día cambia a medianoche de Londres.
 ### 4. Desplegar
 
 Cada despliegue aplica las migraciones pendientes automáticamente
-(`docker-entrypoint.sh` ejecuta `prisma migrate deploy`) y siembra los datos
-iniciales solo si la base de datos está vacía.
+(`docker-entrypoint.sh` ejecuta `node dist/scripts/migrate-deploy.js`) y siembra
+los datos iniciales solo si la base de datos está vacía. Ambos pasos son
+idempotentes: reiniciar el contenedor no duplica ni sobrescribe nada.
 
 ### 5. Importar tus datos
 
