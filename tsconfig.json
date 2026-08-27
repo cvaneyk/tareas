@@ -35,7 +35,12 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
+  // Los ficheros de test quedan fuera del build de producción: un problema en
+  // ellos no debe impedir desplegar la app, que es código aparte. Se siguen
+  // comprobando con `npm run typecheck`, que usa tsconfig.test.json.
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "**/*.test.ts",
+    "lib/test-db.ts"
   ]
 }

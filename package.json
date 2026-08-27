@@ -8,7 +8,7 @@
     "build": "prisma generate && next build && npm run build:scripts",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:push": "prisma db push",
