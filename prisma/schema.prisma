@@ -1,0 +1,197 @@
+// Esquema de "Hogar — Tareas Compartidas".
+//
+// El servidor es la única fuente de verdad. La pieza clave es la restricción
+// @@unique([templateId, dueDate]) de TaskOccurrence: hace que generar una tarea
+// recurrente dos veces para el mismo día sea imposible a nivel de base de datos.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskType {
+  RECURRENT
+  SINGLE
+  CHAPUZA
+  BIG_CLEAN
+}
+
+enum Status {
+  PENDING
+  COMPLETED
+  SKIPPED
+}
+
+enum SubtaskStatus {
+  PENDING
+  COMPLETED
+}
+
+model User {
+  id     String @id
+  name   String
+  color  String @default("#3b82f6")
+  avatar String @default("👤")
+
+  position Int @default(0) // 0 = Persona 1, 1 = Persona 2
+
+  assignedOccurrences TaskOccurrence[]    @relation("occurrenceAssignee")
+  completedOccurrences TaskOccurrence[]   @relation("occurrenceCompleter")
+  assignedSubtasks    OccurrenceSubtask[] @relation("subtaskAssignee")
+  completedSubtasks   OccurrenceSubtask[] @relation("subtaskCompleter")
+  templateSubtasks    TemplateSubtask[]
+  activity            ActivityLog[]
+
+  createdAt DateTime @default(now())
+
+  @@map("users")
+}
+
+model HouseSettings {
+  id        String @id @default("default")
+  houseName String @default("Nuestra Casa 🏠") @map("house_name")
+  startDay  String @default("monday") @map("start_day")
+  theme     String @default("light")
+  timezone  String @default("Europe/Madrid")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("house_settings")
+}
+
+model TaskTemplate {
+  id       String   @id @default(cuid())
+  name     String
+  type     TaskType @default(RECURRENT)
+  category String   @default("hogar")
+
+  /// Si true, la tarea se propone y puede omitirse sin penalización
+  /// (sustituye al antiguo tipo "suggested", que era a la vez tipo y frecuencia).
+  suggestible Boolean @default(false)
+
+  /// Regla de recurrencia. Unión discriminada validada con Zod en lib/recurrence.ts:
+  ///   { kind: 'DAILY' } | { kind: 'EVERY_N_DAYS', n } |
+  ///   { kind: 'WEEKLY', daysOfWeek } | { kind: 'MONTHLY_DAY', day }
+  rule Json
+
+  /// Asignación. Unión discriminada validada con Zod:
+  ///   { mode: 'FIXED', userId } | { mode: 'ALTERNATE_WEEKLY' } | { mode: 'ALTERNATE_TURN' }
+  assignment Json
+
+  weight           Int     @default(1)
+  estimatedMinutes Int     @default(15) @map("estimated_minutes")
+  priority         String?
+  notes            String?
+  active           Boolean @default(true)
+
+  /// Ancla real de la recurrencia. Nunca un literal por defecto.
+  startDate DateTime  @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+
+  subtasks    TemplateSubtask[]
+  occurrences TaskOccurrence[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([active])
+  @@map("task_templates")
+}
+
+model TemplateSubtask {
+  id         String @id @default(cuid())
+  templateId String @map("template_id")
+  name       String
+
+  /// null = hereda el responsable de la ocurrencia.
+  assigneeUserId String? @map("assignee_user_id")
+  position       Int     @default(0)
+
+  template TaskTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  assignee User?        @relation(fields: [assigneeUserId], references: [id], onDelete: SetNull)
+
+  @@index([templateId])
+  @@map("template_subtasks")
+}
+
+model TaskOccurrence {
+  id String @id @default(cuid())
+
+  /// null = tarea suelta creada a mano (sin plantilla).
+  templateId String? @map("template_id")
+
+  /// Índice de ocurrencia dentro de la plantilla (0, 1, 2...). Es lo que hace
+  /// que ALTERNATE_TURN alterne por turno real y no por paridad del calendario.
+  seq Int?
+
+  name     String
+  type     TaskType @default(SINGLE)
+  category String   @default("hogar")
+
+  assignedToId String   @map("assigned_to_id")
+  dueDate      DateTime @map("due_date") @db.Date
+  status       Status   @default(PENDING)
+
+  suggestible      Boolean @default(false)
+  weight           Int     @default(1)
+  estimatedMinutes Int     @default(15) @map("estimated_minutes")
+  priority         String?
+  notes            String?
+
+  completedAt   DateTime? @map("completed_at")
+  completedById String?   @map("completed_by_id")
+
+  template    TaskTemplate?       @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  assignedTo  User                @relation("occurrenceAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
+  completedBy User?               @relation("occurrenceCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+  subtasks    OccurrenceSubtask[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// En PostgreSQL los NULL son distintos entre sí, así que esto restringe las
+  /// tareas de plantilla sin estorbar a las sueltas (templateId = null).
+  @@unique([templateId, dueDate])
+  @@index([dueDate])
+  @@index([status])
+  @@map("task_occurrences")
+}
+
+model OccurrenceSubtask {
+  id           String @id @default(cuid())
+  occurrenceId String @map("occurrence_id")
+  name         String
+
+  assigneeUserId String        @map("assignee_user_id")
+  status         SubtaskStatus @default(PENDING)
+  position       Int           @default(0)
+
+  completedAt   DateTime? @map("completed_at")
+  completedById String?   @map("completed_by_id")
+
+  occurrence  TaskOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  assignee    User           @relation("subtaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Cascade)
+  completedBy User?          @relation("subtaskCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([occurrenceId])
+  @@map("occurrence_subtasks")
+}
+
+model ActivityLog {
+  id       String @id @default(cuid())
+  userId   String @map("user_id")
+  action   String
+  taskName String @map("task_name")
+  details  String @default("")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("activity_log")
+}

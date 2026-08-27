@@ -1,0 +1,24 @@
+# Entorno de desarrollo local: solo la base de datos.
+# La app se arranca aparte con `npm run dev`.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: hogar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hogar
+      POSTGRES_PASSWORD: hogar
+      POSTGRES_DB: hogar
+      TZ: Europe/Madrid
+    ports:
+      - '5432:5432'
+    volumes:
+      - hogar-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hogar -d hogar']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hogar-db-data:
